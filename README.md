@@ -63,3 +63,4 @@ specs/001-ai-chat-todo/   # Spec Kit 设计文档（spec/plan/research/data-mode
 - 不使用蓝紫色渐变 UI
 - 对话体验优先（流式渲染、输入区常驻）
 - 简洁视觉与无障碍、响应式适配
+# ai--
