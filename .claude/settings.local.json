@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -NoProfile -ExecutionPolicy Bypass -File \".specify/scripts/powershell/setup-plan.ps1\" -Json)",
+      "WebSearch",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(powershell -NoProfile -ExecutionPolicy Bypass -File \".specify/scripts/powershell/setup-tasks.ps1\" -Json)",
+      "Bash(powershell -NoProfile -ExecutionPolicy Bypass -File \".specify/scripts/powershell/check-prerequisites.ps1\" -Json -RequireTasks -IncludeTasks)",
+      "Bash(npm -v)",
+      "Bash(npm create *)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(npx tsx *)",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(curl -s -X POST http://localhost:3001/api/chat -H \"Content-Type: application/json\" -d '{\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}]}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/chat -H \"Content-Type: application/json\" -d '{\"messages\":[]}')",
+      "Bash(kill %1)",
+      "Bash(npm run *)",
+      "Bash(curl -s -m 30 -X POST http://localhost:3001/api/chat -H \"Content-Type: application/json\" -d '{\"messages\":[{\"role\":\"user\",\"content\":\"用一句话自我介绍\"}]}')",
+      "Bash(curl -s -m 30 -X POST http://localhost:3001/api/chat -H \"Content-Type: application/json\" -d '{\"messages\":[{\"role\":\"user\",\"content\":\"我有哪些未完成的事？\"}],\"todoContext\":{\"enabled\":true,\"items\":[{\"id\":\"1\",\"text\":\"写周报\",\"done\":false},{\"id\":\"2\",\"text\":\"买牛奶\",\"done\":true},{\"id\":\"3\",\"text\":\"预约牙医\",\"done\":false}]}}')"
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/* 设计 token：低饱和中性色 + 单一强调色（青绿）。禁用蓝紫色渐变。 */
+@theme {
+  --color-ink-50: #f6f7f8;
+  --color-ink-100: #eceef0;
+  --color-ink-200: #d5d9dd;
+  --color-ink-300: #b3bac0;
+  --color-ink-400: #8a939c;
+  --color-ink-500: #6a747d;
+  --color-ink-600: #545d65;
+  --color-ink-700: #454c53;
+  --color-ink-800: #3a4046;
+  --color-ink-900: #2b3035;
+  --color-accent-50: #effaf6;
+  --color-accent-100: #d7f2e8;
+  --color-accent-500: #12b886;
+  --color-accent-600: #0d9b6e;
+  --color-accent-700: #0a7a58;
+  --color-danger-500: #e04f4f;
+  --color-danger-600: #c13a3a;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    sans-serif;
+  background: var(--color-ink-50);
+  color: var(--color-ink-800);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
