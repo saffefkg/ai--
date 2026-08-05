@@ -19,7 +19,27 @@
       "Bash(kill %1)",
       "Bash(npm run *)",
       "Bash(curl -s -m 30 -X POST http://localhost:3001/api/chat -H \"Content-Type: application/json\" -d '{\"messages\":[{\"role\":\"user\",\"content\":\"用一句话自我介绍\"}]}')",
-      "Bash(curl -s -m 30 -X POST http://localhost:3001/api/chat -H \"Content-Type: application/json\" -d '{\"messages\":[{\"role\":\"user\",\"content\":\"我有哪些未完成的事？\"}],\"todoContext\":{\"enabled\":true,\"items\":[{\"id\":\"1\",\"text\":\"写周报\",\"done\":false},{\"id\":\"2\",\"text\":\"买牛奶\",\"done\":true},{\"id\":\"3\",\"text\":\"预约牙医\",\"done\":false}]}}')"
+      "Bash(curl -s -m 30 -X POST http://localhost:3001/api/chat -H \"Content-Type: application/json\" -d '{\"messages\":[{\"role\":\"user\",\"content\":\"我有哪些未完成的事？\"}],\"todoContext\":{\"enabled\":true,\"items\":[{\"id\":\"1\",\"text\":\"写周报\",\"done\":false},{\"id\":\"2\",\"text\":\"买牛奶\",\"done\":true},{\"id\":\"3\",\"text\":\"预约牙医\",\"done\":false}]}}')",
+      "Bash(curl -s -m 15 -x http://127.0.0.1:7897 -o /dev/null -w \"通过代理访问 github.com: HTTP %{http_code} in %{time_total}s\\\\n\" https://github.com)",
+      "Bash(git config *)",
+      "Bash(git push *)",
+      "Bash(powershell -ExecutionPolicy Bypass -File \".specify/scripts/powershell/setup-tasks.ps1\" -Json)",
+      "Bash(powershell -ExecutionPolicy Bypass -File \".specify/scripts/powershell/check-prerequisites.ps1\" -Json -RequireTasks -IncludeTasks)",
+      "Bash(npm --version)",
+      "Bash(mysql -u root -e \"SELECT VERSION\\(\\);\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.dependencies\\)\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=Z130J321J2004|' .env)",
+      "Bash(grep -c '^DB_PASSWORD=Z130J321J2004$' .env)",
+      "Bash(mysql -u root -pZ130J321J2004 ai_chat_todo -e \"SHOW TABLES;\")",
+      "Read(//tmp/**)",
+      "Bash(netstat -ano)",
+      "Bash(PORT=3100 npx tsx src/server.ts)",
+      "Bash(curl -s http://localhost:3100/api/health)",
+      "Bash(mysql -u root -pZ130J321J2004 ai_chat_todo -e \"SELECT id, role, content, created_at FROM messages WHERE user_id = 1 ORDER BY created_at ASC, id ASC LIMIT 50;\")",
+      "Bash(taskkill //F //PID 12988)",
+      "Bash(mysql -u root -pZ130J321J2004 ai_chat_todo -e \"DELETE FROM users WHERE username='tester01'; SELECT \\(SELECT COUNT\\(*\\) FROM users\\) AS users, \\(SELECT COUNT\\(*\\) FROM messages\\) AS messages, \\(SELECT COUNT\\(*\\) FROM todos\\) AS todos, \\(SELECT COUNT\\(*\\) FROM sessions\\) AS sessions, \\(SELECT COUNT\\(*\\) FROM permissions\\) AS permissions;\")",
+      "Bash(grep -rnoE '\"[A-Za-z][A-Za-z ]{4,}\"' components/ hooks/ App.tsx)"
     ]
   }
 }

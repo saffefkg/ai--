@@ -1,4 +1,4 @@
-// 领域模型定义（对应 data-model.md）
+// 领域模型定义（数据库存储，对应 tasks.md 数据库设计）
 
 /** 待办事项 */
 export interface TodoItem {
@@ -22,18 +22,4 @@ export interface ChatMessage {
 /** AI 读取权限设置 */
 export interface PermissionSetting {
   aiCanReadTodos: boolean
-}
-
-/** 本地账号 */
-export interface Account {
-  username: string
-  passwordHash: string
-  salt: string
-  createdAt: string
-}
-
-/** 请求代理时的待办上下文（只读快照） */
-export interface TodoContext {
-  enabled: boolean
-  items: TodoItem[]
 }

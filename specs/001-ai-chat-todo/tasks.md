@@ -1,10 +1,15 @@
-# Tasks: AI 对话与待办网站（可选择性 AI 读取代办）
+# Tasks: AI 对话与待办网站（数据库存储改造）
 
-**Input**: Design documents from `/specs/001-ai-chat-todo/`
+**Input**: 用户需求「用数据库存储用户信息，主键为 id，属性含用户名、密码、最近登录时间、对话记录」+ 设计文档 `/specs/001-ai-chat-todo/`
 
-**Prerequisites**: plan.md（已读）、spec.md（用户故事与优先级）、research.md、data-model.md、contracts/
+**Storage Decision（用户指定，覆盖 plan.md / data-model.md 的 localStorage 方案）**:
+- 数据库：**MySQL**（后端连接池 + SQL 迁移脚本）
+- 迁移范围：**全部业务数据入库**（用户、会话、对话记录、待办、权限设置）
+- 原 plan.md「无状态后端、不落盘」设计作废；后端承担全部持久化，前端不再读写 localStorage 业务数据
 
-**Tests**: 本规范未显式要求 TDD，故不生成单元测试任务；每个用户故事的「独立测试」通过 `quickstart.md` 的端到端场景手动验证（T033）。
+**Prerequisites**: plan.md、spec.md、research.md、data-model.md、contracts/
+
+**Tests**: 本次需求未要求自动化测试；每个用户故事的「独立验证」以 quickstart.md 手动端到端场景为准。
 
 **Organization**: 任务按用户故事分组，保证每个故事可独立实现、独立验证。
 
@@ -14,121 +19,139 @@
 - **[Story]**: 所属用户故事（US1/US2/US3/US4）
 - 描述中给出确切文件路径
 
+## 数据库设计（MySQL，utf8mb4）
+
+| 表 | 字段 |
+|----|------|
+| users | id (PK, AUTO_INCREMENT), username (UNIQUE), password_hash, salt, last_login_at, created_at |
+| sessions | id (PK), user_id (FK→users, CASCADE), token_hash (UNIQUE), created_at, expires_at |
+| messages | id (PK), user_id (FK→users, CASCADE), role ('user'/'assistant'), content, created_at |
+| todos | id (PK), user_id (FK→users, CASCADE), text (≤500), done, created_at |
+| permissions | user_id (PK/FK→users, CASCADE), ai_can_read_todos (默认 false), updated_at |
+
 ## Path Conventions
 
 - **前端**: `frontend/src/`（React + Vite + TS + Tailwind v4）
-- **后端**: `backend/src/`（Node + Express 无状态代理）
+- **后端**: `backend/src/`（Node + Express + mysql2）
 
 ---
 
 ## Phase 1: Setup（共享基础设施）
 
-**Purpose**: 项目初始化与基础结构
+**Purpose**: 项目初始化与基础配置
 
-- [x] T001 [P] Scaffold React + Vite + TS 前端工程（`npm create vite@latest frontend -- --template react-ts`）到 `frontend/`
-- [x] T002 [P] Scaffold Node + TypeScript + Express 后端工程（`package.json`、`tsconfig.json`、`src/`）到 `backend/`
-- [x] T003 配置 Tailwind CSS v4：在 `frontend/` 安装 `tailwindcss` 与 `@tailwindcss/vite`，在 `frontend/vite.config.ts` 注册 `tailwindcss()` 插件，在 `frontend/src/index.css` 写入 `@import "tailwindcss";`（依赖 T001）
-- [x] T004 [P] 创建 `backend/.env.example`，含 `ZHIPU_API_KEY=` 与 `ZHIPU_MODEL=glm-4-flash` 占位与注释
+- [x] T001 初始化后端工程 backend/：package.json、tsconfig.json，安装 express、mysql2、dotenv 及类型依赖
+- [x] T002 [P] 初始化前端工程 frontend/：Vite react-ts 模板 + Tailwind CSS v4（@tailwindcss/vite），frontend/src/index.css 写入 `@import "tailwindcss";`
+- [x] T003 [P] 后端配置 backend/src/config.ts 与 backend/.env.example：DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME、PORT=3001、ZHIPU_API_KEY、ZHIPU_MODEL
+- [x] T004 [P] 配置 frontend/vite.config.ts：dev 下 /api 代理 → http://localhost:3001
 
 ---
 
-## Phase 2: Foundational（阻塞性前置）
+## Phase 2: Foundational（数据库 + 认证——阻塞性前置）
 
-**Purpose**: 所有用户故事共同依赖的核心基础设施，**必须全部完成后方可开始任何用户故事**
+**Purpose**: MySQL 建库建表、连接池、用户注册/登录/会话认证与前端登录门禁。**此阶段未完成前不得开始任何用户故事。**
 
 **⚠️ CRITICAL**: 本阶段未完成前，任何用户故事不得开始
 
-- [x] T005 [P] 创建共享领域类型（TodoItem、ChatMessage、PermissionSetting、Account）于 `frontend/src/types/models.ts`
-- [x] T006 [P] 实现 localStorage 封装于 `frontend/src/services/storage.ts`（类型化 get/set/remove，覆盖键：todos、chat.messages、permission、account、session.loggedIn）
-- [x] T007 实现本地账号服务于 `frontend/src/services/auth.ts`：注册/登录/登出，Web Crypto 加盐 SHA-256 哈希，登录态持久化（依赖 T005、T006）
-- [x] T008 实现登录闸门组件 `frontend/src/components/LoginGate.tsx`：注册/登录表单，全中文文案，错误提示（依赖 T007）
-- [x] T009 实现 Express 服务入口 `backend/src/server.ts`：JSON body、CORS、健康检查端点、生产环境托管 `frontend/dist`（依赖 T002）
-- [x] T010 创建应用壳 `frontend/src/App.tsx`：未登录渲染 LoginGate；已登录渲染响应式双栏布局（对话区 + 待办区）框架（依赖 T008）
-- [x] T011 配置 Vite dev 代理于 `frontend/vite.config.ts`：`/api` → `http://localhost:3001`（依赖 T003）
+- [x] T005 创建建库建表脚本 backend/src/db/schema.sql：users/sessions/todos/permissions/messages 五表（含外键、索引、utf8mb4、CREATE TABLE IF NOT EXISTS）
+- [x] T006 [P] 实现数据库连接池 backend/src/db/pool.ts（mysql2/promise，读取 config，连接失败给出中文错误提示）
+- [x] T007 实现迁移执行器 backend/src/db/migrate.ts：CREATE DATABASE IF NOT EXISTS + 执行 schema.sql，注册为 backend/package.json scripts.migrate
+- [x] T008 [P] 实现密码哈希工具 backend/src/services/password.ts（node:crypto scrypt + 随机 salt，提供 hash/verify，不存明文密码）
+- [x] T009 实现用户服务 backend/src/services/userService.ts：create / findByUsername / updateLastLoginAt（username 唯一约束）
+- [x] T010 [P] 实现会话服务 backend/src/services/sessionService.ts：crypto.randomBytes 生成 token，SHA-256 哈希落库，create/validate/delete，默认 7 天过期
+- [x] T011 实现认证中间件 backend/src/middleware/auth.ts：解析 Authorization: Bearer <token> → 校验会话 → 注入 req.userId；未认证返回 401 与中文提示
+- [x] T012 实现认证路由 backend/src/routes/auth.ts：POST /api/auth/register、POST /api/auth/login（登录成功更新 last_login_at 并返回 token）、POST /api/auth/logout、GET /api/auth/me
+- [x] T013 组装 Express 入口 backend/src/server.ts：json 中间件、挂载 /api/auth、统一错误处理（不泄露内部信息）、生产托管 frontend/dist
+- [x] T014 [P] 前端 API 客户端 frontend/src/services/apiClient.ts：fetch 封装，自动附带 Bearer token，401 时清除登录态，统一中文错误提示
+- [x] T015 前端认证 API frontend/src/services/authApi.ts：register/login/logout/me（依赖 T014）
+- [x] T016 前端登录态 hook frontend/src/hooks/useAuth.ts：登录/登出/启动时校验 token（token 存 localStorage `auth.token`，刷新后自动恢复登录态）
+- [x] T017 前端登录门禁 frontend/src/components/LoginGate.tsx：注册/登录表单（中文文案、密码输入）与错误提示；frontend/src/App.tsx 未登录渲染 LoginGate、已登录渲染主界面
 
-**Checkpoint**: 基础设施就绪——已可登录进入空壳布局，后端健康检查通过，可开始各用户故事
+**Checkpoint**: 注册/登录/登出/刷新保持登录可用；MySQL 五表已建立。
 
 ---
 
 ## Phase 3: User Story 1 - 用户与 AI 对话（Priority: P1）🎯 MVP
 
-**Goal**: 用户在对话区输入中文消息，AI 回复流式逐字出现，支持多轮上下文。
+**Goal**: 登录用户可与 AI 多轮对话；消息与 AI 回复写入 MySQL messages 表，刷新后历史保留可继续。
 
-**Independent Test**: 打开页面 → 输入中文消息并发送 → 回复流式显示；再追问一条 → AI 结合上文回答（对应 quickstart S2）。
+**Independent Test**: 登录 → 输入中文消息 → AI 流式逐字回复；刷新 → 历史消息仍在，可继续追问（对应 quickstart S2）。
 
 ### Implementation for User Story 1
 
-- [x] T012 实现聊天客户端于 `frontend/src/services/chatApi.ts`：`POST /api/chat`，ReadableStream 解析 SSE，AbortController 取消，400/401/502 错误映射（依赖 T005）
-- [x] T013 实现 useChat 于 `frontend/src/hooks/useChat.ts`：消息列表（持久化到 `chat.messages`）、增量拼接 `delta.content`、发送中状态、防重复提交、错误提示与重试（依赖 T012）
-- [x] T014 [P] 创建消息组件 `frontend/src/components/ChatMessage.tsx`：user/assistant 气泡，全中文
-- [x] T015 创建对话区 `frontend/src/components/ChatArea.tsx`：消息流 + 输入框，空/纯空白不发请求，流式期间禁用发送按钮，输入区常驻（依赖 T013、T014）
-- [x] T016 实现 `POST /api/chat` 流式代理于 `backend/src/routes/chat.ts`：校验 messages 非空且末条为 user；携带 `stream: true` 与 Bearer 转发至智谱 `/chat/completions`；SSE 透传；映射 400/401/502 中文错误（依赖 T009）
+- [x] T018 [P] [US1] 实现对话记录服务 backend/src/services/messageService.ts：按用户插入消息、按时间升序取历史
+- [x] T019 [US1] 实现历史接口 backend/src/routes/messages.ts：GET /api/messages（认证）返回当前用户历史消息，并在 backend/src/server.ts 挂载
+- [x] T020 [US1] 改造后端聊天接口 backend/src/routes/chat.ts：认证后取历史 + 当前输入组装请求，SSE 流式转发智谱；请求时落库 user 消息、流结束落库 assistant 回复；上游错误返回 502 与中文提示，并在 backend/src/server.ts 挂载
+- [x] T021 [P] [US1] 前端消息 API frontend/src/services/messagesApi.ts：GET /api/messages
+- [x] T022 [US1] 改造前端对话 hook frontend/src/hooks/useChat.ts：进入加载历史、发送后 SSE 增量渲染、防重复提交
+- [x] T023 [US1] 前端对话界面 frontend/src/components/ChatArea.tsx 与 ChatMessage.tsx：消息流 + 输入框 + 流式逐字渲染 + 中文「发送中/失败可重试」状态
 
-**Checkpoint**: 到此 US1 可独立使用——能登录、能对话并流式接收回复
+**Checkpoint**: 用户故事 1 独立可用（对话 + 历史落库）。
 
 ---
 
 ## Phase 4: User Story 2 - 管理待办事项（Priority: P1）
 
-**Goal**: 用户在待办区新增、查看、勾选完成/取消、删除待办；刷新后数据不丢失。
+**Goal**: 待办 CRUD 按用户存 MySQL；刷新不丢。
 
-**Independent Test**: 新增 → 显示于列表 → 勾选完成 → 刷新 → 状态保持（对应 quickstart S3）。
+**Independent Test**: 登录 → 新增待办 → 出现在列表；勾选完成/取消/删除；刷新后数据仍在（对应 quickstart S3）。
 
 ### Implementation for User Story 2
 
-- [x] T017 实现 useTodos 于 `frontend/src/hooks/useTodos.ts`：增/删/勾选切换，基于 storage.ts 持久化，UUID 生成，trim 后非空且 ≤500 字符校验（依赖 T005、T006）
-- [x] T018 [P] 创建待办项组件 `frontend/src/components/TodoItem.tsx`：文本展示、勾选框、删除按钮、完成态样式
-- [x] T019 创建待办面板 `frontend/src/components/TodoPanel.tsx`：添加入口 + 列表渲染，全中文文案（依赖 T017、T018）
-- [x] T020 将 TodoPanel 接入 `frontend/src/App.tsx` 的待办区（依赖 T010、T019）
+- [x] T024 [P] [US2] 实现待办服务 backend/src/services/todoService.ts：按用户 create/list/toggle/delete
+- [x] T025 [US2] 实现待办接口 backend/src/routes/todos.ts：GET/POST /api/todos、PATCH/DELETE /api/todos/:id（认证；text trim 后非空且 ≤500），并在 backend/src/server.ts 挂载
+- [x] T026 [P] [US2] 前端待办 API frontend/src/services/todosApi.ts：增删改查
+- [x] T027 [US2] 改造前端待办 hook frontend/src/hooks/useTodos.ts：改为调用 /api/todos
+- [x] T028 [US2] 前端待办界面 frontend/src/components/TodoPanel.tsx 与 TodoItem.tsx：列表、新增、勾选、删除
 
-**Checkpoint**: US1 与 US2 均可独立工作——对话、待办各自完整可用
+**Checkpoint**: 用户故事 1 与 2 独立可用。
 
 ---
 
 ## Phase 5: User Story 3 - 控制 AI 是否读取代办（Priority: P2）
 
-**Goal**: 用户通过开关控制 AI 是否读取代办；默认关闭；开启后每次请求携带最新待办快照；界面明确显示状态并持久化。
+**Goal**: 权限开关存 MySQL（默认关闭）；开启时 /api/chat 携带最新待办，关闭时 0 泄漏。
 
-**Independent Test**: 默认关闭时问「我有哪些待办？」→ AI 不引用任何待办；开启后同样提问 → AI 引用当前待办（对应 quickstart S4）。
+**Independent Test**: 关闭时问「我有哪些待办」→ AI 不引用待办；开启后问 → AI 引用当前待办；刷新后开关保持（对应 quickstart S4）。
 
 ### Implementation for User Story 3
 
-- [x] T021 实现 usePermission 于 `frontend/src/hooks/usePermission.ts`：默认 `false`，经 storage.ts 持久化（依赖 T006）
-- [x] T022 [P] 创建权限开关 `frontend/src/components/PermissionToggle.tsx`：清晰展示开/关状态、切换即时反馈，附注「切换前已发送的待办无法撤回」（中文文案）
-- [x] T023 扩展 chatApi 于 `frontend/src/services/chatApi.ts`：权限开启时附带 `todoContext={enabled, items}`（最新待办快照，FR-007）（依赖 T012、T017、T021）
-- [x] T024 扩展 useChat 于 `frontend/src/hooks/useChat.ts`：每次请求实时读取权限与最新待办（权限关闭时请求不含任何待办数据，FR-006）（依赖 T013、T023）
-- [x] T025 扩展 `backend/src/routes/chat.ts`：接收 `todoContext`，仅当 `enabled=true` 时将其作为只读系统上下文注入 messages（依赖 T016）
-- [x] T026 将 PermissionToggle 接入 `frontend/src/App.tsx` 布局（依赖 T010、T022）
+- [x] T029 [P] [US3] 实现权限服务 backend/src/services/permissionService.ts：按用户 get/update（无记录时默认 false）
+- [x] T030 [US3] 实现权限接口 backend/src/routes/permission.ts：GET/PUT /api/permission（认证），并在 backend/src/server.ts 挂载
+- [x] T031 [US3] 扩展后端聊天接口 backend/src/routes/chat.ts：请求时读取该用户权限；开启则读取最新待办注入 todoContext（FR-007），关闭则请求体不含任何待办数据（FR-006，0 泄漏）
+- [x] T032 [P] [US3] 前端权限 API frontend/src/services/permissionApi.ts：GET/PUT /api/permission
+- [x] T033 [US3] 改造前端权限 hook frontend/src/hooks/usePermission.ts：改为调用 /api/permission，默认关闭
+- [x] T034 [US3] 前端权限开关 frontend/src/components/PermissionToggle.tsx：明确状态展示、即时反馈、切换时提示「切换前已发送给 AI 的待办无法撤回」
 
-**Checkpoint**: US3 可用——权限开关即时生效、刷新保持、关闭零泄漏、开启可引用
+**Checkpoint**: 用户故事 1、2、3 独立可用。
 
 ---
 
 ## Phase 6: User Story 4 - AI 利用待办提供主动帮助（Priority: P3）
 
-**Goal**: 权限开启时，AI 能主动基于待办给出进度总结、提醒与行动建议；引用与实际一致、不虚构；待办为空时如实告知。
+**Goal**: 权限开启时 AI 可基于待办主动总结进度、给出行动建议。
 
-**Independent Test**: 开启权限且有多个待办 → 询问「我的待办进度」→ AI 汇总未完成/已完成项（对应 quickstart S4/S5）。
+**Independent Test**: 开启权限且有若干待办，问「我有哪些未完成的事？」→ AI 列出未完成项（只读、不虚构）。
 
 ### Implementation for User Story 4
 
-- [x] T027 创建待办感知系统提示词模块 `backend/src/prompts/todoPrompt.ts`：全中文；指示 AI 主动总结进度/提醒/建议；只读不虚构；引用与实际一致；待办为空时如实说「当前没有待办」（依赖 T025）
-- [x] T028 将提示词接入 `backend/src/routes/chat.ts` 并验证边界情况：空待办不虚构、已删除待办取最新快照、权限关闭时仅依据消息文本（依赖 T027）
+- [x] T035 [US4] 扩展后端聊天接口 backend/src/routes/chat.ts：权限开启时构造中文系统提示与待办只读快照注入上下文，指导 AI 主动总结进度/给出建议；待办为空时如实说明「当前没有待办」
+- [x] T036 [US4] 多轮上下文组装 backend/src/routes/chat.ts：控制最近 N 条历史 + 当前消息 + 待办摘要的顺序与长度，保证 AI 引用与实际一致、不虚构
 
-**Checkpoint**: US4 可用——AI 在权限开启下主动利用待办，引用准确、边界可靠
+**Checkpoint**: 所有用户故事独立可用。
 
 ---
 
-## Phase 7: Polish & Cross-Cutting Concerns
+## Phase 7: Polish & 跨切面治理
 
-**Purpose**: 跨用户故事的整体质量与合规收尾
+**Purpose**: 影响多个故事的整体改进与合规检查
 
-- [x] T029 [P] 全站中文审查：扫描 `frontend/src/` 所有面向用户文案，确保无英文硬编码（宪法原则一）
-- [x] T030 [P] 定义设计 token 于 `frontend/src/index.css`：低饱和中性色 + 单一强调色，**无蓝紫色渐变**（宪法原则二）
-- [x] T031 [P] 响应式审查：375px 移动端与桌面端均无横向滚动、无元素重叠（宪法原则五，quickstart S5）
-- [x] T032 [P] 无障碍：权限开关与输入框可键盘操作、对比度达标（宪法原则四）
-- [x] T033 运行 `quickstart.md` 端到端验证（S1–S5），修复发现的问题
-- [x] T034 添加 `README.md`（安装/运行说明）与 `.gitignore`（排除 `backend/.env`）
+- [x] T037 [P] 清理 localStorage 遗留：frontend/src/services/storage.ts 移除业务数据读写（仅保留 auth.token 存取），删除旧本地账号逻辑
+- [x] T038 [P] 同步设计文档：更新 specs/001-ai-chat-todo/data-model.md（MySQL 实体与存储键）与 quickstart.md（MySQL 安装、schema 迁移命令、启动步骤）
+- [x] T039 [P] 宪法合规检查：全站中文（无英文硬编码）、无蓝紫色渐变、375px 无横向滚动、文本对比度达标
+- [x] T040 展示最近登录时间：登录页/主界面显示 lastLoginAt（来自 /api/auth/me 返回的 last_login_at），frontend/src/components/LoginGate.tsx 与主界面布局
+- [x] T041 安全加固 backend：SQL 全参数化（防注入）、密码哈希参数合理、会话过期清理、错误响应不泄露内部信息
+- [x] T042 端到端验证 specs/001-ai-chat-todo/quickstart.md：S1 数据库登录、S2 对话、S3 待办、S4 权限、S5 合规、S6 主动帮助全部通过
 
 ---
 
@@ -136,61 +159,61 @@
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: 无依赖，可立即开始；T001/T002/T004 可并行
+- **Setup (Phase 1)**: 无依赖，可立即开始
 - **Foundational (Phase 2)**: 依赖 Setup 完成；**阻塞所有用户故事**
-- **用户故事 (Phase 3+)**: 均依赖 Foundational；US3 依赖 US1+US2，US4 依赖 US3 的 todoContext 注入（T025）；US1 与 US2 可并行
-- **Polish (Final Phase)**: 依赖所需用户故事完成
+- **用户故事 (Phase 3-6)**: 均依赖 Foundational（登录 + 建表后才有数据可读写）
+- **Polish (Phase 7)**: 依赖所需用户故事全部完成
 
 ### User Story Dependencies
 
-- **US1 (P1)**: 依赖 Phase 2，无其他故事依赖
-- **US2 (P1)**: 依赖 Phase 2，与 US1 并行（不同文件）
-- **US3 (P2)**: 依赖 US1（chatApi/useChat）与 US2（useTodos/待办数据）
-- **US4 (P3)**: 依赖 US3（todoContext 注入能力）
+- **US1 (P1)**: 依赖 Phase 2 认证与数据库；无其他故事依赖
+- **US2 (P1)**: 依赖 Phase 2；与 US1 并行（不同文件）
+- **US3 (P2)**: 依赖 US1（聊天接口扩展）与 US2（待办数据读取）
+- **US4 (P3)**: 依赖 US3（权限开启才有待办上下文）
 
 ### Within Each User Story
 
-- 核心实现（services/hooks）先于组件
-- 前端请求组装先于后端注入
-- 故事完成后独立验证再进入下一优先级
+- 服务（Service）先于路由（Route）
+- 路由先于前端 hook / 界面
+- 核心实现先于集成
 
 ### Parallel Opportunities
 
-- Phase 1: T001 + T002 + T004 可并行
-- Phase 2: T005 + T006 + T009 + T011 可并行（T007/T008、T010 依序）
-- US1: T012 与 T016 可并行（前端客户端 vs 后端路由），其后 T013/T014 并行
-- US1 与 US2 可整体并行（对话文件 vs 待办文件）
-- Phase 7: T029–T032 可并行
+- Phase 1: T002 + T003 + T004 可并行
+- Phase 2: T006 + T008 + T010 + T014 可并行（T005→T007、T009、T011→T012→T013 依序；T014→T015→T016→T017 依序）
+- 各故事内的 [P] 任务可并行
+- Phase 3-6 在 Foundational 完成后可并行实施（前后端不同模块文件）
+- Phase 7: T037 + T038 + T039 可并行
 
 ---
 
 ## Parallel Example: User Story 1
 
 ```bash
-# 并行启动前端客户端与后端路由：
-Task: "T012 实现 chatApi（frontend/src/services/chatApi.ts）"
-Task: "T016 实现 /api/chat 流式代理（backend/src/routes/chat.ts）"
+# 服务层与前端 API 层并行：
+Task: "T018 实现对话记录服务 backend/src/services/messageService.ts"
+Task: "T021 前端消息 API frontend/src/services/messagesApi.ts"
 
-# 并行启动消息组件与 useChat 之外的纯 UI：
-Task: "T013 实现 useChat（frontend/src/hooks/useChat.ts）"
-Task: "T014 创建 ChatMessage 组件（frontend/src/components/ChatMessage.tsx）"
+# 后端路由（依赖服务）与前端界面并行：
+Task: "T020 改造后端聊天接口 backend/src/routes/chat.ts"
+Task: "T023 前端对话界面 frontend/src/components/ChatArea.tsx 与 ChatMessage.tsx"
 ```
 
 ---
 
 ## Implementation Strategy
 
-### MVP First（仅 US1）
+### MVP First（先交付 US1）
 
 1. 完成 Phase 1: Setup
-2. 完成 Phase 2: Foundational（关键，阻塞所有故事）
-3. 完成 Phase 3: US1（对话）
-4. **STOP and VALIDATE**: 运行 quickstart S1 + S2 独立验证
+2. 完成 Phase 2: Foundational（数据库 + 认证，**关键阻塞**）
+3. 完成 Phase 3: US1（对话 + 消息落库）——**MVP**
+4. **STOP and VALIDATE**: 登录 → 对话 → 刷新历史保留
 5. 演示/交付 MVP
 
 ### Incremental Delivery
 
-1. Setup + Foundational → 基础就绪
+1. Setup + Foundational → 基础设施就绪（注册/登录可用）
 2. 加入 US1 → 独立验证 → 交付（MVP：对话可用）
 3. 加入 US2 → 独立验证 → 交付（+待办可用）
 4. 加入 US3 → 独立验证 → 交付（+权限控制）
@@ -199,16 +222,7 @@ Task: "T014 创建 ChatMessage 组件（frontend/src/components/ChatMessage.tsx�
 
 ### Parallel Team Strategy
 
-多开发者时：
-
-1. 团队共同完成 Setup + Foundational
-2. Foundational 完成后：
-   - 开发者 A: US1（对话）
-   - 开发者 B: US2（待办）
-3. US1+US2 合并后：
-   - 开发者 C: US3（权限控制）
-4. US3 完成后：
-   - US4（AI 主动帮助）
+多人并行时：先共同完成 Setup + Foundational；之后开发者 A 做 US1、开发者 B 做 US2；US3 依赖二者后端接口的扩展；US4 最后。
 
 ---
 
@@ -217,7 +231,7 @@ Task: "T014 创建 ChatMessage 组件（frontend/src/components/ChatMessage.tsx�
 - [P] 任务 = 不同文件、无未完成依赖
 - [Story] 标签将任务映射到具体用户故事
 - 每个用户故事应可独立完成与验证
-- 验证路径：quickstart.md S1–S5（本规范未要求 TDD）
+- 验证路径：quickstart.md S1–S6（本需求未要求 TDD）
 - 每完成一个任务或逻辑组提交一次
 - 可在任一 Checkpoint 停下独立验证故事
 - 避免：模糊任务、同文件冲突、破坏独立性的跨故事依赖

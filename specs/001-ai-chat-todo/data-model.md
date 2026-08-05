@@ -1,62 +1,83 @@
-# Data Model: AI 对话与待办网站
+# Data Model: AI 对话与待办网站（数据库存储）
 
-全部业务数据存于浏览器 localStorage（单用户本地，spec Assumptions）。后端为无状态代理，不存储业务数据。
+> 更新说明：按用户需求「用数据库存储用户信息，主键为 id，属性含用户名、密码、最近登录时间、对话记录」，存储方案由 localStorage 改为 **MySQL 全量入库**（覆盖原 localStorage 方案）。
 
-## 实体
+全部业务数据（用户、会话、对话记录、待办、权限设置）存于 MySQL。后端承担全部持久化，前端仅保留登录 token（localStorage `auth.token`）。
 
-### TodoItem（待办事项）
+## 实体（MySQL 表）
+
+### users（用户信息）
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | string | 唯一标识（UUID） |
-| text | string | 待办内容，trim 后非空，≤500 字符 |
-| done | boolean | 是否完成，默认 false |
-| createdAt | string (ISO 8601) | 创建时间 |
+| id | BIGINT UNSIGNED PK AUTO_INCREMENT | 主键 |
+| username | VARCHAR(50) UNIQUE NOT NULL | 用户名 |
+| password_hash | VARCHAR(255) NOT NULL | 密码 scrypt 哈希 |
+| salt | VARCHAR(64) NOT NULL | 随机盐值 |
+| last_login_at | DATETIME NULL | **最近登录时间**，登录成功时更新 |
+| created_at | DATETIME NOT NULL DEFAULT NOW() | 创建时间 |
 
-- 状态转换：`done` 在 false ↔ true 间切换；取消完成恢复。
-- AI 对 TodoItem 为**只读**，不会产生任何写入（FR-013）。
-
-### ChatMessage（对话消息）
+### sessions（登录会话）
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | string | 唯一标识（UUID） |
-| role | 'user' \| 'assistant' | 消息角色 |
-| content | string | 消息文本，非空 |
-| createdAt | string (ISO 8601) | 创建时间 |
+| id | BIGINT UNSIGNED PK AUTO_INCREMENT | 主键 |
+| user_id | BIGINT UNSIGNED FK→users | 所属用户（CASCADE） |
+| token_hash | CHAR(64) UNIQUE NOT NULL | 令牌 SHA-256 哈希（明文令牌只回传客户端） |
+| created_at | DATETIME NOT NULL DEFAULT NOW() | 创建时间 |
+| expires_at | DATETIME NOT NULL | 过期时间（默认 7 天） |
 
-- 空消息 / 纯空白消息不产生 ChatMessage、不触发请求。
-- `messages` 数组按 createdAt 升序保存当前会话上下文。
-
-### PermissionSetting（AI 读取权限）
+### messages（对话记录）
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| aiCanReadTodos | boolean | 是否允许 AI 读取代办，**默认 false**（FR-006） |
+| id | BIGINT UNSIGNED PK AUTO_INCREMENT | 主键 |
+| user_id | BIGINT UNSIGNED FK→users | 所属用户（CASCADE） |
+| role | ENUM('user','assistant') NOT NULL | 消息角色 |
+| content | TEXT NOT NULL | 消息文本 |
+| created_at | DATETIME NOT NULL DEFAULT NOW() | 创建时间 |
 
-- 切换后立即生效并持久化；切换前已发送的待办数据不可撤回（见 spec Edge Cases，界面需提示）。
+- 空消息 / 纯空白消息不落库、不触发请求。
+- 同用户消息按 `created_at, id` 升序构成多轮上下文。
 
-### Account（本地账号）
+### todos（待办事项）
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| username | string | 用户名，唯一（本机） |
-| passwordHash | string | 密码加盐 SHA-256 哈希 |
-| salt | string | 随机盐值 |
-| createdAt | string (ISO 8601) | 创建时间 |
+| id | BIGINT UNSIGNED PK AUTO_INCREMENT | 主键 |
+| user_id | BIGINT UNSIGNED FK→users | 所属用户（CASCADE） |
+| text | VARCHAR(500) NOT NULL | 待办内容，trim 后非空 |
+| done | BOOLEAN NOT NULL DEFAULT FALSE | 是否完成 |
+| created_at | DATETIME NOT NULL DEFAULT NOW() | 创建时间 |
 
-- 登录/注册均在本机完成；刷新后保持登录（FR-014）。
-- 明文密码不落盘（research §4）。
+- AI 对 todo **只读**（FR-013），不会产生任何写入。
 
-## 存储键（localStorage）
+### permissions（AI 读取权限）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| user_id | BIGINT UNSIGNED PK FK→users | 所属用户（CASCADE） |
+| ai_can_read_todos | BOOLEAN NOT NULL DEFAULT FALSE | 是否允许 AI 读取代办，**默认 false**（FR-006） |
+| updated_at | DATETIME ON UPDATE NOW() | 更新时间 |
+
+## 存储键（前端 localStorage）
 
 | 键 | 值 |
 |------|------|
-| `todos` | `TodoItem[]` |
-| `chat.messages` | `ChatMessage[]` |
-| `permission` | `PermissionSetting` |
-| `account` | `Account`（未登录时不存在） |
-| `session.loggedIn` | 布尔，登录态标记 |
+| `auth.token` | 登录令牌（明文），仅用于携带 Bearer 头 |
+
+## 接口一览（后端）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /api/auth/register | 注册，返回 token + user |
+| POST | /api/auth/login | 登录，更新 last_login_at，返回 token + user |
+| POST | /api/auth/logout | 登出，删除会话 |
+| GET | /api/auth/me | 当前用户（刷新后恢复登录态） |
+| GET | /api/messages | 当前用户历史对话 |
+| POST | /api/chat | 对话：后端取历史 + 权限/待办上下文，SSE 流式返回并落库 |
+| GET/POST | /api/todos | 待办列表 / 新增 |
+| PATCH/DELETE | /api/todos/:id | 标记完成 / 删除 |
+| GET/PUT | /api/permission | 读取 / 更新 AI 读取代办开关 |
 
 ## 数据流向（权限核心）
 
-1. 用户发送消息 → 前端读取 `permission.aiCanReadTodos`。
-2. `true`：请求附带 `todoContext = { enabled: true, items: TodoItem[] }`（每次请求读取最新待办，FR-007）。
+1. 用户发送消息 → 后端读取该用户 `permissions.ai_can_read_todos`。
+2. `true`：读取最新待办（`todos`），以只读 system 上下文注入请求（FR-007）。
 3. `false`：请求不含任何待办数据（FR-006，0 泄漏）。
-4. 后端仅做流式转发，不解析、不存储业务数据。
+4. 用户消息请求时落库，assistant 回复流结束后落库。

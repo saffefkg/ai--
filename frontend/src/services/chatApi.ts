@@ -1,11 +1,6 @@
-// 对话客户端：POST /api/chat，解析 SSE 流式回复（契约见 contracts/api-chat.md）
-import type { ChatMessage, TodoContext } from '../types/models'
-
-export interface ChatRequest {
-  messages: ChatMessage[]
-  model?: string
-  todoContext?: TodoContext
-}
+// 对话客户端（对应 tasks.md T020 前端侧）：POST /api/chat，解析 SSE 流式回复
+// 契约已改为服务端取历史：请求体仅 { content }，历史与权限上下文由后端从数据库组装
+import { getToken } from './token'
 
 export interface ChatStreamHandlers {
   onDelta: (text: string) => void
@@ -14,16 +9,20 @@ export interface ChatStreamHandlers {
 }
 
 export async function streamChat(
-  req: ChatRequest,
+  content: string,
   handlers: ChatStreamHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
   let res: Response
   try {
     res = await fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req),
+      headers,
+      body: JSON.stringify({ content }),
       signal,
     })
   } catch (err) {
@@ -43,16 +42,8 @@ export async function streamChat(
     } catch {
       // 非 JSON 错误体，使用默认文案
     }
+    if (res.status === 401) window.dispatchEvent(new Event('auth:logout'))
     handlers.onError(message)
-    return
-  }
-
-  const contentType = res.headers.get('Content-Type') ?? ''
-  if (!contentType.includes('text/event-stream')) {
-    // 兜底：非流式响应直接读取文本
-    const data = (await res.json().catch(() => ({}))) as { content?: string }
-    if (data.content) handlers.onDelta(data.content)
-    handlers.onDone()
     return
   }
 

@@ -1,25 +1,31 @@
-// 对话状态：消息流、SSE 增量渲染、防重复提交、错误重试
+// 对话状态（对应 tasks.md T022）：进入加载历史、SSE 增量渲染、防重复提交、错误重试
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage, TodoContext } from '../types/models'
+import type { ChatMessage } from '../types/models'
+import { getMessages } from '../services/messagesApi'
 import { streamChat } from '../services/chatApi'
-import { KEYS, readStorage, writeStorage } from '../services/storage'
 
-export interface UseChatOptions {
-  /** 由上层提供：当前 AI 读取代办权限与最新待办快照；未开启时返回 null */
-  getTodoContext: () => TodoContext | null
-}
-
-export function useChat({ getTodoContext }: UseChatOptions) {
-  const [messages, setMessages] = useState<ChatMessage[]>(() =>
-    readStorage<ChatMessage[]>(KEYS.messages, []),
-  )
+export function useChat() {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState('')
   const abortRef = useRef<AbortController | null>(null)
+  const loadedRef = useRef(false)
+
+  // 从数据库加载历史对话（刷新后历史保留，FR-002）
+  const loadHistory = useCallback(async () => {
+    try {
+      const msgs = await getMessages()
+      setMessages(msgs)
+    } catch {
+      // 登录态失效由 apiClient 派发 auth:logout 处理
+    }
+  }, [])
 
   useEffect(() => {
-    writeStorage(KEYS.messages, messages)
-  }, [messages])
+    if (loadedRef.current) return
+    loadedRef.current = true
+    void loadHistory()
+  }, [loadHistory])
 
   const send = useCallback(
     async (text: string) => {
@@ -39,18 +45,16 @@ export function useChat({ getTodoContext }: UseChatOptions) {
         content: '',
         createdAt: new Date().toISOString(),
       }
-      const history = [...messages, userMsg]
 
-      setMessages(history.concat(assistantMsg))
+      setMessages((prev) => [...prev, userMsg, assistantMsg])
       setError('')
       setStreaming(true)
 
-      const todoContext = getTodoContext()
       const controller = new AbortController()
       abortRef.current = controller
 
       await streamChat(
-        { messages: history, todoContext: todoContext ?? undefined },
+        content,
         {
           onDelta: (delta) => {
             setMessages((prev) =>
@@ -60,25 +64,21 @@ export function useChat({ getTodoContext }: UseChatOptions) {
             )
           },
           onDone: () => {
-            // 空回复（如被停止/中断）则移除占位气泡
-            setMessages((prev) =>
-              prev.filter((m) => !(m.id === assistantId && m.content === '')),
-            )
             setStreaming(false)
+            abortRef.current = null
+            void loadHistory()
           },
           onError: (message) => {
-            setMessages((prev) =>
-              prev.filter((m) => !(m.id === assistantId && m.content === '')),
-            )
-            setError(message)
             setStreaming(false)
+            abortRef.current = null
+            setError(message)
+            void loadHistory()
           },
         },
         controller.signal,
       )
-      abortRef.current = null
     },
-    [messages, streaming, getTodoContext],
+    [streaming, loadHistory],
   )
 
   const stop = useCallback(() => {
@@ -86,10 +86,5 @@ export function useChat({ getTodoContext }: UseChatOptions) {
     abortRef.current = null
   }, [])
 
-  const clearChat = useCallback(() => {
-    setMessages([])
-    setError('')
-  }, [])
-
-  return { messages, streaming, error, send, stop, clearChat }
+  return { messages, streaming, error, send, stop }
 }

@@ -1,14 +1,15 @@
+// 登录门禁（对应 tasks.md T017）：注册/登录调用后端认证接口，全中文文案
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { login, register } from '../services/auth'
 
 interface LoginGateProps {
-  onLogin: () => void
+  onLogin: (username: string, password: string) => Promise<void>
+  onRegister: (username: string, password: string) => Promise<void>
 }
 
 type Mode = 'login' | 'register'
 
-export default function LoginGate({ onLogin }: LoginGateProps) {
+export default function LoginGate({ onLogin, onRegister }: LoginGateProps) {
   const [mode, setMode] = useState<Mode>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -30,11 +31,10 @@ export default function LoginGate({ onLogin }: LoginGateProps) {
     setSubmitting(true)
     try {
       if (mode === 'register') {
-        await register(name, password)
+        await onRegister(name, password)
       } else {
-        await login(name, password)
+        await onLogin(name, password)
       }
-      onLogin()
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败，请重试')
     } finally {
@@ -57,7 +57,7 @@ export default function LoginGate({ onLogin }: LoginGateProps) {
         <p className="mb-6 text-sm text-ink-500">
           {mode === 'login'
             ? '登录以进入你的个人工作区'
-            : '创建你的本地账号（数据仅保存在本机）'}
+            : '创建账号（用户名 + 密码），数据存入服务器数据库'}
         </p>
         <label className="mb-1 block text-sm text-ink-700" htmlFor="username">
           用户名
@@ -71,7 +71,7 @@ export default function LoginGate({ onLogin }: LoginGateProps) {
           autoComplete="username"
         />
         <label className="mb-1 block text-sm text-ink-700" htmlFor="password">
-          密码 / PIN
+          密码
         </label>
         <input
           id="password"
@@ -79,7 +79,7 @@ export default function LoginGate({ onLogin }: LoginGateProps) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="mb-4 w-full rounded-lg border border-ink-300 px-3 py-2 focus:border-accent-500 focus:outline-none"
-          autoComplete="current-password"
+          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
         />
         {error && (
           <p className="mb-3 text-sm text-danger-500" role="alert">

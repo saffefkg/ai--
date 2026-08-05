@@ -6,13 +6,15 @@
   "description": "AI 对话与待办网站的无状态智谱代理后端",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "migrate": "tsx src/db/migrate.ts",
     "build": "tsc",
     "start": "node dist/server.js"
   },
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "mysql2": "^3.23.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

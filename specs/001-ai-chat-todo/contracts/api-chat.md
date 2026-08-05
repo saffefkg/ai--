@@ -1,6 +1,12 @@
 # Contract: POST /api/chat
 
-前端 ↔ 后端之间的唯一接口。后端将请求转发至智谱 AI 并流式返回 SSE。前端不直接访问智谱接口。
+> 更新说明：改为数据库存储后，历史对话、权限与待办上下文均由后端从 MySQL 组装，请求体简化为仅 `{ content }`；除本接口外的认证接口见 data-model.md「接口一览」。
+
+前端 ↔ 后端之间的对话接口。后端从数据库取历史与权限/待办上下文，转发至智谱 AI 并流式返回 SSE。前端不直接访问智谱接口。
+
+## Auth
+
+所有请求须携带 `Authorization: Bearer <token>`（登录/注册返回的令牌）。
 
 ## Request
 
@@ -8,26 +14,20 @@
 
 ```json
 {
-  "messages": [
-    { "role": "user", "content": "我有哪些未完成的事？" }
-  ],
-  "model": "glm-4-flash",
-  "todoContext": {
-    "enabled": true,
-    "items": [
-      { "id": "1", "text": "写周报", "done": false }
-    ]
-  }
+  "content": "我有哪些未完成的事？",
+  "model": "glm-4-flash"
 }
 ```
 
 | 字段 | 类型 | 规则 |
 |------|------|------|
-| messages | ChatMessage[] | 非空；最后一条必须为 user；content 非空 |
+| content | string | 非空；trim 后为空不触发请求 |
 | model | string \| 可选 | 省略时使用服务端 `ZHIPU_MODEL` |
-| todoContext | object \| 可选 | 权限开启时由前端附带 |
-| todoContext.enabled | boolean | 权限开关状态；`false` 时后端忽略 `items` |
-| todoContext.items | TodoItem[] | 当前待办快照（只读） |
+
+服务端自动组装上下文：`[system（基础中文引导 + 权限开启时的待办只读快照）] + [最近 N 条历史对话] + [当前 content]`。
+
+- 权限开启（`permissions.ai_can_read_todos = true`）时注入待办只读上下文（FR-007）；关闭时不含任何待办数据（FR-006）。
+- 用户消息请求时落库，assistant 回复流结束后落库。
 
 ## Response（成功）
 
@@ -45,19 +45,16 @@ data: [DONE]
 
 - 前端解析 `choices[0].delta.content` 增量拼接展示。
 - 以出现 `finish_reason` 或 `data: [DONE]` 为结束标志。
-- `delta.reasoning_content`（思考内容）可选择展示或忽略，默认不展示。
 
 ## Errors
 
 | 状态码 | 场景 | 前端提示（中文） |
 |--------|------|------------------|
-| 400 | messages 为空或最后一条非 user | 消息无效，请重试 |
-| 401 | 服务端未配置 `ZHIPU_API_KEY` | 服务未配置，请联系管理员 |
+| 400 | content 为空 | 消息不能为空 |
+| 401 | 未登录 / 令牌过期 / 未配置 `ZHIPU_API_KEY` | 请先登录 / 登录已过期 / 服务未配置 |
 | 502 | 智谱上游错误 | AI 服务暂时不可用，请稍后重试 |
-
-- 前端在收到错误时展示中文提示并允许用户重试（spec Edge Cases）。
 
 ## 安全
 
-- 接口仅做流式代理，不落盘任何业务数据。
+- 接口仅按用户读写自身数据（`user_id` 隔离）。
 - 智谱 Key 仅在服务端读取，永不进入前端。

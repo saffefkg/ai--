@@ -6,7 +6,7 @@ import TodoItemView from './TodoItem'
 
 interface TodoPanelProps {
   todos: TodoItem[]
-  onAdd: (text: string) => boolean
+  onAdd: (text: string) => boolean | Promise<boolean>
   onToggle: (id: string) => void
   onRemove: (id: string) => void
 }
@@ -15,7 +15,7 @@ export default function TodoPanel({ todos, onAdd, onToggle, onRemove }: TodoPane
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const text = draft.trim()
     if (!text) {
@@ -27,7 +27,8 @@ export default function TodoPanel({ todos, onAdd, onToggle, onRemove }: TodoPane
       return
     }
     setError('')
-    if (onAdd(text)) setDraft('')
+    const ok = await onAdd(text)
+    if (ok) setDraft('')
   }
 
   const doneCount = todos.filter((t) => t.done).length
